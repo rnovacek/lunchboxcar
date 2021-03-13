@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta name="viewport" content="width=device-width">
+        <title>LunchBoxCar</title>
+    </head>
+    <body>
+        <button class="reconnect" style="display: none">Reconnect</button>
+        <div style="position: absolute; bottom: 20vh; display: flex; justify-content: center; width: 100%">
+            <canvas width="400" height="400"></canvas>
+        </div>
+        <script type="text/javascript">
+class Controller {
+    MAX_P = 1024;
+
+    constructor() {
+        this.reconnectButton = document.querySelector('.reconnect');
+        this.reconnectButton.addEventListener('click', this.connect);
+
+        this.canvas = document.querySelector('canvas');
+        this.canvas.addEventListener('touchstart', this.touchStart);
+        this.canvas.addEventListener('touchmove', this.touchMove);
+        this.canvas.addEventListener('touchend', this.touchEnd);
+        this.ctx = this.canvas.getContext('2d');
+        this.r = this.canvas.width / 2;
+        this.rr = this.r / 2;
+        this.ws = null;
+
+        this.left = 0;
+        this.right = 0;
+        this.lastLeft = 0;
+        this.lastRight = 0;
+
+        this.draw(0, 0);
+        this.connect();
+
+        setInterval(() => {
+            if (this.left === this.lastLeft && this.right === this.lastRight) {
+                return;
+            }
+            this.send();
+        }, 200);
+    }
+
+    draw = (x, y) => {
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+        this.ctx.beginPath();
+        this.ctx.arc(this.r, this.r, this.r, 0, 2 * Math.PI);
+        this.ctx.fillStyle = 'yellow';
+        this.ctx.fill();
+
+        this.ctx.beginPath();
+        this.ctx.arc(this.r + x * this.rr, this.r + y * this.rr, this.rr, 0, 2 * Math.PI);
+        this.ctx.fillStyle = this.ws ? 'green' : 'red';
+        this.ctx.fill();
+    }
+
+    setWS = (ws) => {
+        this.ws = ws;
+        this.reconnectButton.style.display = this.ws ? 'none' : 'block';
+    }
+
+    connect = () => {
+        const ws = new WebSocket(`ws://${window.location.host}/ws`);
+        ws.addEventListener('open', () => {
+            this.setWS(ws);
+            this.ws.send('hello\r\n');
+            this.draw(0, 0);
+        });
+
+        ws.addEventListener('message', (event) => {
+            console.log('[WS]', event.data);
+        });
+
+        ws.addEventListener('close', (event) => {
+            console.error('[WS] CLOSED');
+            this.setWS(null);
+            this.draw(0, 0);
+        });
+    };
+
+    send = () => {
+        const command = `M${this.left},${this.right}\r\n`
+        console.log('SEND', command);
+        this.ws.send(command);
+        this.lastLeft = this.left;
+        this.lastRight = this.right;
+    }
+
+    setLeftRight = (x, y) => {
+        this.draw(x, y);
+        const power = this.MAX_P * -y;
+        this.left  = Math.trunc(power + this.MAX_P * x);
+        this.right = Math.trunc(power - this.MAX_P * x);
+    }
+
+    touchStart = (e) => {
+        console.log('start', e);
+    }
+
+    touchMove = (e) => {
+        e.preventDefault();
+
+        const bbox = this.canvas.getBoundingClientRect();
+
+        const touch = e.touches[0];
+        console.log(touch);
+        const touchX = touch.clientX - bbox.left;
+        const touchY = touch.clientY - bbox.top;
+        console.log(touchX, touchY);
+
+        // Convert to relative (-1, +1)
+        let x = (touchX - this.r) / (this.r / 2);
+        let y = (touchY - this.r) / (this.r / 2);
+        const lengthRelative = Math.sqrt(x * x + y * y);
+        if (lengthRelative > 1) {
+            x = x / lengthRelative;
+            y = y / lengthRelative;
+        }
+
+        this.setLeftRight(x, y);
+    };
+
+    touchEnd = (e) => {
+        console.log('stop', e);
+        this.setLeftRight(0, 0);
+        this.send();
+    };
+}
+
+window.controller = new Controller();
+        </script>
+    </body>
+</html>
